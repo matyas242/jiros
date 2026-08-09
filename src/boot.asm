@@ -8,6 +8,9 @@ KERNEL_LOAD_SEG equ 0x1000
 ;KERNEL_START_ADDR equ 0x100000
 KERNEL_START_ADDR equ 0x10000
 
+MODE_INFO_ADDR equ 0x9000
+VBE_STRUCT_ADDR equ 0x9200
+
 start:
     cli; // Clear interrupts & disable them
     mov ax, 0x00
@@ -39,6 +42,43 @@ int 0x13 ;Call BIOS interrupt to read sectors
 
 jc disk_read_error ;Jump to error handler if carry flag is set
 
+;mov ax, 0x0013
+;int 0x10        ; Video BIOS
+
+xor ax, ax
+mov es, ax
+
+; ---- VBE: get mode info ----
+mov ax, 0x4F01
+mov cx, 0x11B          ; 1280x1024, 24bpp
+mov di, MODE_INFO_ADDR
+int 0x10
+cmp ax, 0x004F
+jne vbe_error
+
+; ---- VBE: set mode (bit 14 = use linear framebuffer) ----
+mov ax, 0x4F02
+mov bx, 0x11B | 0x4000
+int 0x10
+cmp ax, 0x004F
+jne vbe_error
+
+mov eax, [MODE_INFO_ADDR + 0x28]   ; physical framebuffer address
+mov [VBE_STRUCT_ADDR + 0], eax
+
+mov ax, [MODE_INFO_ADDR + 0x10]    ; pitch (bytes per scanline)
+mov [VBE_STRUCT_ADDR + 4], ax
+
+mov ax, [MODE_INFO_ADDR + 0x12]    ; width
+mov [VBE_STRUCT_ADDR + 6], ax
+
+mov ax, [MODE_INFO_ADDR + 0x14]    ; height
+mov [VBE_STRUCT_ADDR + 8], ax
+
+mov al, [MODE_INFO_ADDR + 0x19]    ; bpp
+mov [VBE_STRUCT_ADDR + 10], al
+
+jmp load_PM
 
 load_PM:
     cli
@@ -49,6 +89,9 @@ load_PM:
     jmp CODE_OFFSET:Pmode_main ;Far jump to flush the instruction queue and enter protected mode
 
 disk_read_error:
+    hlt
+
+vbe_error:
     hlt
 
 ;GDT Implementation
