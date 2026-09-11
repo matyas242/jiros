@@ -3,10 +3,10 @@ FLAGS =  -g -ffreestanding -nostdlib -nostartfiles -Wall -O0 -Iinc
 
 all:
 	nasm -f bin ./src/boot.asm -o ./bin/boot.bin
-	nasm -f elf ./src/kernel.asm -o ./build/kernel.asm.o
-	i686-elf-gcc -I./src $(FLAGS) -std=gnu99 -c ./src/kernel.c -o ./build/kernel.c.o
-	i686-elf-ld -g -relocatable $(FILES) -o ./build/complete_kernel.o
-	i686-elf-gcc $(FLAGS) -fno-use-linker-plugin -T ./src/linkerScript.ld -o ./bin/kernel.bin -ffreestanding -O0 -nostdlib ./build/complete_kernel.o
+	nasm -f elf64 ./src/kernel.asm -o ./build/kernel.asm.o
+	x86_64-elf-gcc -I./src $(FLAGS) -std=gnu99 -c ./src/kernel.c -o ./build/kernel.c.o
+	x86_64-elf-ld -relocatable $(FILES) -o ./build/complete_kernel.o
+	x86_64-elf-gcc $(FLAGS) -fno-use-linker-plugin -T ./src/linkerScript.ld -o ./bin/kernel.bin -ffreestanding -O0 -nostdlib ./build/complete_kernel.o
 #	i686-elf-gcc $(FLAGS) -T ./src/linkerScript.ld -o ./bin/kernel.bin -ffreestanding -O0 -nostdlib ./build/complete_kernel.o
 
 	dd if=./bin/boot.bin >> ./bin/os.bin
