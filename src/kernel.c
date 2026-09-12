@@ -305,6 +305,60 @@ void rtc_get_time(uint8_t *hour, uint8_t *minute, uint8_t *second)
     }
 }
 
+#define HISTORY_MAX 256
+
+static char command_history[HISTORY_MAX][COMMAND_MAX];
+static int history_count = 0;
+static int history_position = -1;
+
+static int prompt_col = 0;
+static int displayed_len = 0;
+
+void string_copy(char *dest, const char *src)
+{
+    int i = 0;
+
+    while (src[i] != '\0')
+    {
+        dest[i] = src[i];
+        i++;
+    }
+
+    dest[i] = '\0';
+}
+
+int string_length(const char *s)
+{
+    int i = 0;
+
+    while (s[i] != '\0')
+        i++;
+
+    return i;
+}
+
+void history_add(const char *command)
+{
+    if (history_count >= HISTORY_MAX)
+        return;
+
+    string_copy(command_history[history_count], command);
+    history_count++;
+}
+
+void redraw_command(void)
+{
+    for (int c = 0; c < displayed_len; c++)
+        clear_at(row, prompt_col + c);
+
+    set_cursor(row, prompt_col);
+    col = prompt_col;
+
+    print(command);
+
+    displayed_len = string_length(command);
+}
+
 void kernel_main() 
 {
     int count = sizeof(keys) / sizeof(keys[0]);
@@ -346,17 +400,56 @@ void kernel_main()
             command[0] = '\0';
 
             print(">");
+
+            prompt_col = col;
+            displayed_len = 0;
         }
 
         unsigned char code = keyboard_read_scancode();
         
         if (code)
         {
+            if (code == 0x48)
+            {
+                if (history_count > 0)
+                {
+                    if (history_position == -1)
+                        history_position = history_count - 1;
+                    else if (history_position > 0)
+                        history_position--;
+
+                    string_copy(command, command_history[history_position]);
+                    redraw_command();
+                }
+            }
+
+            if (code == 0x50)
+            {
+                if (history_position != -1)
+                {
+                    if (history_position < history_count - 1)
+                    {
+                        history_position++;
+                        string_copy(command, command_history[history_position]);
+                    }
+                    else
+                    {
+                        history_position = -1;
+                        command[0] = '\0';
+                    }
+
+                    redraw_command();
+                }
+            }
+
             if (code == 0x1C)
             {
                 new_command = true;
+                history_position = -1;
 
                 print("\n");
+
+                history_add(command);
 
                 if (string_equals(command, "help"))
                 {
@@ -392,7 +485,7 @@ void kernel_main()
                 {
                     uint8_t hour, minute, second;
                     rtc_get_time(&hour, &minute, &second);
-                    print("Current time: %d:%d:%d\n", hour, minute, second);
+                    print("Current time: %d:%d:%d", hour, minute, second);
                 }
                 else if (string_equals(command, "changetimezone"))
                 {
@@ -439,8 +532,6 @@ void kernel_main()
                             needs_redraw = true; 
                         }
                     }
-
-                    print("\n");
                 }
                 else
                 {
@@ -458,6 +549,9 @@ void kernel_main()
                     clear_at(row, col);
 
                     command[col - 1] = '\0';
+
+                    if (displayed_len > 0)
+                        displayed_len--;
                 }
             }
             else if (code == 0x2A || code == 0xAA || code == 0x3A)
@@ -495,6 +589,8 @@ void kernel_main()
                             command[size] = target;
                             command[size + 1] = '\0';
                         }
+
+                        displayed_len = string_length(command);
 
                         break;
                     }
