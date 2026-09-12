@@ -305,6 +305,75 @@ void rtc_get_time(uint8_t *hour, uint8_t *minute, uint8_t *second)
     }
 }
 
+#define PIT_CHANNEL0_PORT 0x40
+#define PIT_COMMAND_PORT  0x43
+#define PIT_FREQ_HZ       1193182u
+
+static uint16_t last_pit_value     = 0;
+static uint32_t pit_tick_remainder = 0;
+static uint32_t elapsed_seconds    = 0;
+
+static uint8_t base_hour   = 0;
+static uint8_t base_minute = 0;
+static uint8_t base_second = 0;
+
+void pit_init(void)
+{
+    outb(PIT_COMMAND_PORT, 0x34);
+    outb(PIT_CHANNEL0_PORT, 0x00);
+    outb(PIT_CHANNEL0_PORT, 0x00);
+
+    last_pit_value = 0xFFFF;
+}
+
+uint16_t pit_read_counter(void)
+{
+    outb(PIT_COMMAND_PORT, 0x00);
+    uint8_t lo = inb(PIT_CHANNEL0_PORT);
+    uint8_t hi = inb(PIT_CHANNEL0_PORT);
+    return (uint16_t)(lo | (hi << 8));
+}
+
+void pit_poll(void)
+{
+    uint16_t current = pit_read_counter();
+
+    if (current > last_pit_value)
+    {
+        pit_tick_remainder += 65536;
+
+        while (pit_tick_remainder >= PIT_FREQ_HZ)
+        {
+            pit_tick_remainder -= PIT_FREQ_HZ;
+            elapsed_seconds++;
+        }
+    }
+
+    last_pit_value = current;
+}
+
+void clock_init(void)
+{
+    rtc_get_time(&base_hour, &base_minute, &base_second);
+
+    elapsed_seconds    = 0;
+    pit_tick_remainder = 0;
+}
+
+void clock_get_time(uint8_t *hour, uint8_t *minute, uint8_t *second)
+{
+    uint32_t total = (uint32_t)base_hour * 3600u
+                    + (uint32_t)base_minute * 60u
+                    + (uint32_t)base_second
+                    + elapsed_seconds;
+
+    total %= 86400u;
+
+    *hour   = (uint8_t)(total / 3600u);
+    *minute = (uint8_t)((total % 3600u) / 60u);
+    *second = (uint8_t)(total % 60u);
+}
+
 #define HISTORY_MAX 256
 
 static char command_history[HISTORY_MAX][COMMAND_MAX];
@@ -366,9 +435,14 @@ void kernel_main()
     VBE_init();
     mouse_init();
 
+    pit_init();
+    clock_init();
+
     while (1)
     {
         cursor();
+
+        pit_poll();
         
         if (init == true)
         {
@@ -449,7 +523,14 @@ void kernel_main()
 
                 print("\n");
 
-                history_add(command);
+                for (int i = 0; i < COMMAND_MAX; i++)
+                {
+                    if (command[0] != '\0')
+                    {
+                        history_add(command);
+                        break;
+                    }
+                }
 
                 if (string_equals(command, "help"))
                 {
@@ -484,7 +565,7 @@ void kernel_main()
                 else if (string_equals(command, "time"))
                 {
                     uint8_t hour, minute, second;
-                    rtc_get_time(&hour, &minute, &second);
+                    clock_get_time(&hour, &minute, &second);
                     print("Current time: %d:%d:%d", hour, minute, second);
                 }
                 else if (string_equals(command, "changetimezone"))
@@ -532,6 +613,8 @@ void kernel_main()
                             needs_redraw = true; 
                         }
                     }
+
+                    clock_init();
                 }
                 else
                 {
