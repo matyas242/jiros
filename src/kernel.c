@@ -248,7 +248,65 @@ char to_upper(char c)
 
 int result = 0;
 
-void kernel_main() {
+static inline unsigned char cmos_read(unsigned char reg)
+{
+    outb(0x70, reg);
+    return inb(0x71);
+}
+
+static inline int rtc_update_in_progress(void)
+{
+    return cmos_read(0x0A) & 0x80;
+}
+
+static int timezone = 0;
+
+void rtc_get_time(uint8_t *hour, uint8_t *minute, uint8_t *second)
+{
+    uint8_t last_second, last_minute, last_hour, reg_b;
+
+    while (rtc_update_in_progress());
+
+    *second = cmos_read(0x00);
+    *minute = cmos_read(0x02);
+    *hour   = cmos_read(0x04);
+
+    // read twice and compare, in case the clock ticked over mid-read
+    do
+    {
+        last_second = *second;
+        last_minute = *minute;
+        last_hour   = *hour;
+
+        while (rtc_update_in_progress());
+
+        *second = cmos_read(0x00);
+        *minute = cmos_read(0x02);
+        *hour   = cmos_read(0x04);
+    }
+    while (*second != last_second || *minute != last_minute || *hour != last_hour);
+
+    reg_b = cmos_read(0x0B);
+
+    // convert from BCD to normal binary, unless the RTC is already in binary mode
+    if (!(reg_b & 0x04))
+    {
+        *second = (*second & 0x0F) + ((*second / 16) * 10);
+        *minute = (*minute & 0x0F) + ((*minute / 16) * 10);
+        *hour   = ((*hour & 0x0F) + (((*hour & 0x70) / 16) * 10)) | (*hour & 0x80);
+    }
+
+    *hour += timezone;
+
+    // convert 12-hour to 24-hour
+    if (!(reg_b & 0x02) && (*hour & 0x80))
+    {
+        *hour = ((*hour & 0x7F) + 12) % 24;
+    }
+}
+
+void kernel_main() 
+{
     int count = sizeof(keys) / sizeof(keys[0]);
 
     VBE_init();
@@ -332,7 +390,57 @@ void kernel_main() {
                 }
                 else if (string_equals(command, "time"))
                 {
-                    //print("Current time: %d:%d:%d\n", hour, minute, second);
+                    uint8_t hour, minute, second;
+                    rtc_get_time(&hour, &minute, &second);
+                    print("Current time: %d:%d:%d\n", hour, minute, second);
+                }
+                else if (string_equals(command, "changetimezone"))
+                {
+                    int i = timezone;
+
+                    print("timezone: ");
+                    int num_row = row;
+                    int num_col = col;
+
+                    bool needs_redraw = true;
+
+                    while (true)
+                    {
+                        if (needs_redraw)
+                        {
+                            for (int c = 0; c < 4; c++)
+                                clear_at(num_row, num_col + c);
+
+                            set_cursor(num_row, num_col); 
+
+                            if (i > 0)
+                                print("+%d", i);
+                            else
+                                print("%d", i);
+
+                            needs_redraw = false;
+                        }
+
+                        uint8_t code = keyboard_read_scancode();
+
+                        if (code == 0x1C) 
+                        { 
+                            timezone = i; 
+                            break; 
+                        }
+                        else if (code == 0x48) 
+                        { 
+                            i = (i == 12) ? -12 : i + 1; 
+                            needs_redraw = true; 
+                        }
+                        else if (code == 0x50) 
+                        { 
+                            i = (i == -12) ? 12 : i - 1; 
+                            needs_redraw = true; 
+                        }
+                    }
+
+                    print("\n");
                 }
                 else
                 {

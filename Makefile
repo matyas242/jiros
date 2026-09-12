@@ -1,6 +1,11 @@
 FILES = ./build/kernel.asm.o ./build/kernel.c.o
 FLAGS =  -g -ffreestanding -nostdlib -nostartfiles -Wall -O0 -Iinc
 
+run:
+	make clean
+	make all
+	qemu-system-x86_64 -hda ./bin/os.bin
+
 all:
 	nasm -f bin ./src/boot.asm -o ./bin/boot.bin
 	nasm -f elf64 ./src/kernel.asm -o ./build/kernel.asm.o

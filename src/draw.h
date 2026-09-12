@@ -214,6 +214,12 @@ void clear_at(int row, int col)
 static int row = 0;
 static int col = 0;
 
+void set_cursor(int row_new, int col_new)
+{
+    row = row_new;
+    col = col_new;
+}
+
 void print_char(char c)
 {
     if (c == '\n')
