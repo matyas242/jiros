@@ -23,4 +23,10 @@ SECTIONS
         *(COMMON)
         *(.bss)
     }
+
+    .kernel_end ALIGN(512) :
+    {
+        LONG(0xDEADBEEF)
+        . = ALIGN(512);
+    }
 }

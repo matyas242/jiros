@@ -11,6 +11,8 @@ KERNEL_START_ADDR equ 0x10000
 MODE_INFO_ADDR equ 0x9000
 VBE_STRUCT_ADDR equ 0x9200
 
+KERNEL_MAGIC equ 0xDEADBEEF
+
 start:
     cli; // Clear interrupts & disable them
     mov ax, 0x00
@@ -19,6 +21,36 @@ start:
     mov ss, ax  ;Set stack segment to 0
     mov sp, 0x7c00 ;Set stack pointer to 0x7c00
     sti; // Enable interrupts
+
+    mov ax, KERNEL_LOAD_SEG
+    mov es, ax
+    xor bx, bx
+
+    mov cl, 2
+    xor ch, ch
+    xor dh, dh
+    mov dl, 0x80
+
+    xor si, si
+
+.count_loop:
+    mov ah, 0x02
+    mov al, 1
+    int 0x13
+    jc .counting_done
+
+    mov di, bx
+    mov eax, [es:di]
+    cmp eax, KERNEL_MAGIC
+    je .counting_done
+
+    inc si
+    inc cl
+    add bh, 2
+    jmp .count_loop
+
+.counting_done:
+    mov [kernel_sector_count], si
 
 ;load kernel
 ;mov bx, KERNEL_LOAD_SEG ;Set segment to load kernel
@@ -36,7 +68,7 @@ mov ch, 0x00 ;Set cylinder to 0
 
 mov ah, 0x02 ;Set function to read sectors
 
-mov al, 40 ;Number of sectors to read
+mov al, [kernel_sector_count] ;Number of sectors to read
 
 int 0x13 ;Call BIOS interrupt to read sectors
 
@@ -93,6 +125,9 @@ disk_read_error:
 
 vbe_error:
     hlt
+
+kernel_sector_count:
+    dw 0
 
 ;GDT Implementation
 gdt_start:
@@ -164,9 +199,10 @@ checkCPUID:
     ; if the bit in eax was successfully flipped (eax != ecx), CPUID is supported.
     xor eax, ecx
     jnz check_if_longmode_supported
-    notSupported:
-        mov ax, 0
-        ret
+
+notSupported:
+    mov ax, 0
+    ret
 
 ; check longmode support
 CPUID_EXTENSIONS equ 0x80000000 ; returns the maximum extended requests for cpuid
